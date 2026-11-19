@@ -31,7 +31,7 @@ final class DoubaoAudioStateMonitor {
         }
     }
 
-    private static let targetBundleID = "com.bytedance.inputmethod.doubaoime"
+    private static var targetBundleID: String { VoiceInputBackend.selected == .wechat ? "com.tencent.inputmethod.wetype" : "com.bytedance.inputmethod.doubaoime" }
     private static let targetDeviceName = "vRemoteDr 2ch"
 
     private var started = false

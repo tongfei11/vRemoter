@@ -259,6 +259,7 @@ private final class ConsoleViewModel: ObservableObject {
     @Published var bluetoothGranted = false
     @Published var x6Connected = false
     @Published var chromecastConnected = false
+    @Published var voiceBackend = VoiceInputBackend.selected
     @Published var inputTriggerKey = AppStorage.inputTriggerKey
     @Published var activeModal: ConsoleModal?
     @Published var showX6MicHint = !UserDefaults.standard.bool(
@@ -271,6 +272,7 @@ private final class ConsoleViewModel: ObservableObject {
     var onRestartApp: (() -> Void)?
     var onMacInputEnabledChanged: ((Bool) -> Void)?
     var onRemoteInputEnabledChanged: ((Bool) -> Void)?
+    var onVoiceBackendChanged: ((VoiceInputBackend) -> Void)?
     var onInputTriggerChanged: (() -> Void)?
     var onRemoteMappingEnabledChanged: ((SupportedRemoteID, Bool) -> Void)?
 
@@ -331,6 +333,10 @@ private final class ConsoleViewModel: ObservableObject {
     }
 
     private func openDoubaoSettings() {
+        if VoiceInputBackend.selected == .wechat {
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/Library/Input Methods/WeType.app/Contents/MacOS/WeTypeSettings.app"))
+            return
+        }
         let bundleIdentifier = "com.bytedance.inputmethod.doubaoime.settings"
         let candidates = [
             NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier),
@@ -419,6 +425,7 @@ final class DebugWindowController: NSWindowController, NSWindowDelegate {
     var onRestartApp: (() -> Void)?
     var onMacInputEnabledChanged: ((Bool) -> Void)?
     var onRemoteInputEnabledChanged: ((Bool) -> Void)?
+    var onVoiceBackendChanged: ((VoiceInputBackend) -> Void)?
     var onInputTriggerChanged: (() -> Void)?
     var onRemoteMappingEnabledChanged: ((SupportedRemoteID, Bool) -> Void)?
 
@@ -459,6 +466,7 @@ final class DebugWindowController: NSWindowController, NSWindowDelegate {
         model.onRemoteInputEnabledChanged = { [weak self] enabled in
             self?.onRemoteInputEnabledChanged?(enabled)
         }
+        model.onVoiceBackendChanged = { [weak self] backend in self?.onVoiceBackendChanged?(backend) }
         model.onInputTriggerChanged = { [weak self] in
             self?.onInputTriggerChanged?()
         }
@@ -728,7 +736,7 @@ private struct StudioMixerView: View {
     private var statusPanel: some View {
         VStack(spacing: 0) {
             StatusRow(
-                title: L10n.text("豆包输入设备", "Doubao input"),
+                title: VoiceInputBackend.selected == .wechat ? "微信输入设备" : L10n.text("豆包输入设备", "Doubao input"),
                 value: model.doubaoIsRecording
                     ? (model.doubaoUsesVRemote
                         ? L10n.text("vRemoteDr 2ch · 录音中", "vRemoteDr 2ch · Recording")
@@ -863,12 +871,12 @@ private struct KeyMappingView: View {
                 HStack(spacing: 7) {
                     Image(systemName: "waveform.badge.mic")
                         .foregroundStyle(ConsoleTheme.green)
-                    Text(L10n.text("豆包语音触发键", "Doubao voice trigger"))
+                    Text(model.voiceBackend == .wechat ? "微信语音 · 按住 Fn" : "豆包语音触发键")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(ConsoleTheme.text)
                 }
                 Text(L10n.text(
-                    "遥控器语音键与电脑键盘都使用这个按键控制豆包。这里必须与豆包输入法中的语音快捷键保持一致。",
+                    model.voiceBackend == .wechat ? "微信设置：按住说话 = Fn；麦克风 = vRemoteDr 2ch。遥控器按住说话，松手结束。" : "这里必须与豆包输入法中的语音快捷键保持一致。",
                     "The remote voice key and Mac keyboard both use this trigger. It must match Doubao Input Method's voice shortcut."
                 ))
                     .font(.system(size: 12.5))
@@ -877,11 +885,22 @@ private struct KeyMappingView: View {
             }
             Spacer(minLength: 10)
             VStack(alignment: .trailing, spacing: 7) {
+                Picker("语音输入法", selection: Binding(
+                    get: { model.voiceBackend },
+                    set: { backend in
+                        model.onVoiceBackendChanged?(backend)
+                        model.voiceBackend = backend
+                    }
+                )) {
+                    ForEach(VoiceInputBackend.allCases) { backend in
+                        Text(backend.title).tag(backend)
+                    }
+                }.frame(width: 210)
                 Picker(
                     L10n.text("触发键", "Trigger"),
                     selection: Binding(
-                        get: { model.inputTriggerKey },
-                        set: model.setInputTrigger
+                        get: { model.voiceBackend == .wechat ? .function : model.inputTriggerKey },
+                        set: { if model.voiceBackend == .doubao { model.setInputTrigger($0) } }
                     )
                 ) {
                     ForEach(InputTriggerKey.allCases) { trigger in
@@ -1462,7 +1481,7 @@ private struct OutputChannelView: View {
             Text(L10n.text("混合输出", "Mixed Output"))
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(ConsoleTheme.text)
-            Text(L10n.text("发送给豆包", "Sent to Doubao"))
+            Text(VoiceInputBackend.selected == .wechat ? "发送给微信输入法" : "发送给豆包")
                 .font(.system(size: 13))
                 .foregroundStyle(ConsoleTheme.secondary)
                 .padding(.top, 4)
@@ -1520,7 +1539,7 @@ private struct OutputChannelView: View {
             .padding(.top, 25)
             Text(outputError
                 ? L10n.text("等待音频链路恢复", "Waiting for audio route")
-                : L10n.text("豆包正在接收", "Doubao is receiving"))
+                : L10n.text("输入法正在接收", "Input method receiving"))
                 .font(.system(size: 11))
                 .foregroundStyle(outputError ? ConsoleTheme.red : ConsoleTheme.secondary)
                 .padding(.top, 15)

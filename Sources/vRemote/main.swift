@@ -69,6 +69,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         AppStorage.prepare()
+        debugWindow.onVoiceBackendChanged = { [weak self] backend in
+            self?.x6Session.changeBackend(backend)
+            self?.x6SearchSuppressor.triggerConfigurationDidChange()
+        }
         AppAnalytics.configure()
         // Keep one continuous diagnostic history while X6 is being tuned.
         // Log.swift rotates at 5 MB; only the explicit menu action clears it.

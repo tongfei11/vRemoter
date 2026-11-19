@@ -122,6 +122,9 @@ enum VoiceSessionSelfTest {
     }
 
     static func run() -> Bool {
+        let previousBackend = VoiceInputBackend.selected
+        VoiceInputBackend.selected = .doubao
+        defer { VoiceInputBackend.selected = previousBackend }
         let checks = CheckContext()
         testActiveBeforeRelease(checks)
         testStopBeforeActive(checks)

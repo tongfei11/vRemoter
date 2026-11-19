@@ -114,11 +114,22 @@ final class X6SessionCoordinator {
         )
     }
 
+    private var wechatKeyboardHeld = false
+    private lazy var wechatSession = HoldVoiceSession(
+        key: { down in
+            if down { Key.triggerDown(.function) } else { Key.triggerUp(.function) }
+        },
+        route: { [weak self] active in
+            guard let self else { return }
+            self.setRemoteRouteActive(active || self.wechatKeyboardHeld)
+        }
+    )
+
     func start() {
         doubaoState.onSnapshotChanged = { [weak self] snapshot in
             self?.handleDoubaoSnapshot(snapshot)
         }
-        doubaoState.start()
+        if VoiceInputBackend.selected == .doubao { doubaoState.start() }
     }
 
     // MARK: - ATVV transport
@@ -128,6 +139,13 @@ final class X6SessionCoordinator {
         reason: UInt8,
         supportsPhysicalHoldGesture: Bool = false
     ) {
+        if VoiceInputBackend.selected == .wechat {
+            // Only physical Chromecast presses may begin recognition; ignore stale host starts.
+            guard remote != .chromecast || reason == 0x03 else { return }
+            wechatSession.start(remote.rawValue)
+            publish("微信按住说话 · 松手结束")
+            return
+        }
         let snapshot = doubaoState.snapshotNow()
         let inserted = streamingRemotes.insert(remote).inserted
         if openRequestedRemote == remote {
@@ -231,6 +249,11 @@ final class X6SessionCoordinator {
     }
 
     func remoteAudioStopped(remote: VoiceRemoteID, reason: UInt8) {
+        if VoiceInputBackend.selected == .wechat {
+            wechatSession.stop(remote.rawValue)
+            publish("微信已就绪 · 按住遥控器语音键说话")
+            return
+        }
         streamingRemotes.remove(remote)
         if openRequestedRemote == remote {
             openRequestedRemote = nil
@@ -304,6 +327,7 @@ final class X6SessionCoordinator {
     }
 
     func remoteDisconnected(_ remote: VoiceRemoteID) {
+        wechatSession.stop(remote.rawValue)
         streamingRemotes.remove(remote)
         physicalVoiceGestures.removeValue(forKey: remote)
         if openRequestedRemote == remote {
@@ -355,7 +379,13 @@ final class X6SessionCoordinator {
     /// Called before the real physical trigger reaches Doubao. It updates the
     /// remote transport only; it never synthesizes a second keyboard event.
     func triggerDownObserved(isSynthetic: Bool) {
-        guard !isSynthetic else { return }
+        if VoiceInputBackend.selected == .wechat {
+            guard !isSynthetic else { return }
+            wechatKeyboardHeld = true
+            setRemoteRouteActive(true)
+            return
+        }
+        guard VoiceInputBackend.selected == .doubao, !isSynthetic else { return }
         let snapshot = doubaoState.snapshotNow()
         let shouldOpen: Bool
         switch phase {
@@ -394,7 +424,13 @@ final class X6SessionCoordinator {
     }
 
     func triggerUpObserved(isSynthetic: Bool) {
-        guard !isSynthetic else { return }
+        if VoiceInputBackend.selected == .wechat {
+            guard !isSynthetic else { return }
+            wechatKeyboardHeld = false
+            if !wechatSession.isActive { setRemoteRouteActive(false) }
+            return
+        }
+        guard VoiceInputBackend.selected == .doubao, !isSynthetic else { return }
         print(
             "[TRIGGER] UP source=keyboard phase=\(phase.rawValue) " +
             "owner=\(owner.rawValue)"
@@ -406,6 +442,8 @@ final class X6SessionCoordinator {
     // MARK: - Lifecycle / manual control
 
     func forceClose() {
+        wechatKeyboardHeld = false
+        wechatSession.close()
         generation &+= 1
         cancelScheduledWork()
         phase = .closed
@@ -414,6 +452,14 @@ final class X6SessionCoordinator {
         physicalVoiceGestures.removeAll()
         closeRouteAndTransports()
         publish("已手动关闭")
+    }
+
+    func changeBackend(_ backend: VoiceInputBackend) {
+        forceClose()
+        doubaoState.stop()
+        VoiceInputBackend.selected = backend
+        if backend == .doubao { doubaoState.start() }
+        publish(backend == .wechat ? "微信已就绪 · 按住遥控器语音键说话" : "等待豆包输入法")
     }
 
     func stop() {
@@ -426,6 +472,7 @@ final class X6SessionCoordinator {
     private func handleDoubaoSnapshot(
         _ snapshot: DoubaoAudioStateMonitor.Snapshot
     ) {
+        guard VoiceInputBackend.selected == .doubao else { return }
         switch snapshot.state {
         case .active:
             switch phase {

@@ -1,3 +1,10 @@
+#if LOCAL_BUILD
+import Foundation
+enum AppAnalytics {
+    static func configure() {}
+    static func signal(_ name: String, parameters: [String: String] = [:]) {}
+}
+#else
 import Foundation
 import TelemetryDeck
 
@@ -40,3 +47,5 @@ enum AppAnalytics {
         TelemetryDeck.signal(name, parameters: parameters)
     }
 }
+
+#endif

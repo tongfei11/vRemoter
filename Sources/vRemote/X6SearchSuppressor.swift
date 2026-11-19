@@ -73,7 +73,7 @@ final class X6SearchSuppressor {
             let isSearchKey =
                 (type == .keyDown || type == .keyUp) && keyCode == 0xB1
             let isSearchSystemEvent = type.rawValue == 14
-            let trigger = AppStorage.inputTriggerKey
+            let trigger: InputTriggerKey = VoiceInputBackend.selected == .wechat ? .function : AppStorage.inputTriggerKey
             let isDelayedX6Trigger = type == .flagsChanged
                 && trigger.keyCodes.contains(keyCode)
             if isArmed && (
@@ -147,7 +147,7 @@ final class X6SearchSuppressor {
         // before posting. Observing them again here would execute the same
         // microphone transition twice.
         guard !isSynthetic else { return }
-        let trigger = AppStorage.inputTriggerKey
+        let trigger: InputTriggerKey = VoiceInputBackend.selected == .wechat ? .function : AppStorage.inputTriggerKey
         guard trigger.keyCodes.contains(keyCode) else { return }
 
         // macOS normally reports modifier edges as `flagsChanged`, but on
