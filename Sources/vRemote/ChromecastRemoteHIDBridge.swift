@@ -48,6 +48,11 @@ private func chromecastRemoteInputReport(
         )
 }
 
+private func chromecastValue(context: UnsafeMutableRawPointer?, result: IOReturn, sender: UnsafeMutableRawPointer?, value: IOHIDValue) {
+    let element = IOHIDValueGetElement(value)
+    print("[CAST-VALUE] result=\(result) page=\(IOHIDElementGetUsagePage(element)) usage=\(IOHIDElementGetUsage(element)) value=\(IOHIDValueGetIntegerValue(value))")
+}
+
 /// Connection monitor for the Google Chromecast Remote HID interface.
 ///
 /// Its voice key does not expose a dependable HID key-down usage on macOS;
@@ -60,6 +65,7 @@ final class ChromecastRemoteHIDBridge {
 
     private var manager: IOHIDManager?
     private var activeDevice: IOHIDDevice?
+    private var inputBuffers: [UnsafeMutablePointer<UInt8>] = []
     private var remappingEnabled = RemoteMappingStore.shared.isEnabled(.chromecast)
     private var reportButtons: [UInt32: String] = [:]
 
@@ -145,6 +151,8 @@ final class ChromecastRemoteHIDBridge {
         )
         IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
         self.manager = nil
+        for buffer in inputBuffers { buffer.deallocate() }
+        inputBuffers.removeAll()
     }
 
     func setRemappingEnabled(_ enabled: Bool) {
@@ -159,6 +167,11 @@ final class ChromecastRemoteHIDBridge {
         device: IOHIDDevice
     ) {
         guard result == kIOReturnSuccess, activeDevice == nil else { return }
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 512)
+        inputBuffers.append(buffer)
+        IOHIDDeviceRegisterInputReportCallback(device, buffer, 512, chromecastRemoteInputReport, Unmanaged.passUnretained(self).toOpaque())
+        IOHIDDeviceRegisterInputValueCallback(device, chromecastValue, nil)
+        print("[CAST-HID] device callbacks registered; listenAccess=\(IOHIDCheckAccess(kIOHIDRequestTypeListenEvent).rawValue)")
         // IOHIDManagerOpen already opened every current and future matching
         // HID collection with the requested access mode.
         activeDevice = device
