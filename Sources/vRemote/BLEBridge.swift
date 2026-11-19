@@ -553,6 +553,12 @@ extension BLEBridge: CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral,
+                    didUpdateNotificationStateFor characteristic: CBCharacteristic,
+                    error: Error?) {
+        print("[\(logTag)] NOTIFY \(characteristic.uuid.uuidString) enabled=\(characteristic.isNotifying) error=\(error?.localizedDescription ?? "none")")
+    }
+
+    func peripheral(_ peripheral: CBPeripheral,
                     didUpdateValueFor characteristic: CBCharacteristic,
                     error: Error?) {
         if let error {
