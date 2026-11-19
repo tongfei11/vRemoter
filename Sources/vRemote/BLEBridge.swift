@@ -443,7 +443,9 @@ extension BLEBridge: CBCentralManagerDelegate {
         hasResetSessionForConnection = false
         print("[\(logTag)] 已连接")
         onConnectionChanged?(true)
-        peripheral.discoverServices([Self.serviceUUID])
+        // Enumerate this Chromecast-compatible firmware's actual services.
+        // Keep X6 discovery unchanged.
+        peripheral.discoverServices(nameHint == "Chromecast Remote" ? nil : [Self.serviceUUID])
     }
 
     func centralManager(_ central: CBCentralManager,
@@ -569,7 +571,7 @@ extension BLEBridge: CBPeripheralDelegate {
         case Self.audioUUID:
             handleAudio(data)
         default:
-            print("[\(logTag)] unexpected char update \(characteristic.uuid.uuidString.prefix(8)), \(len)B")
+            print("[\(logTag)] unexpected char update \(characteristic.uuid.uuidString), \(len)B data=\(data.prefix(32).map { String(format: "%02X", $0) }.joined(separator: " "))")
         }
     }
 
