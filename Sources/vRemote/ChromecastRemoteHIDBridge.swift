@@ -61,7 +61,7 @@ final class ChromecastRemoteHIDBridge {
     private var manager: IOHIDManager?
     private var activeDevice: IOHIDDevice?
     private var remappingEnabled = RemoteMappingStore.shared.isEnabled(.chromecast)
-    private var lastButtonID: String?
+    private var reportButtons: [UInt32: String] = [:]
 
     func start(sharedMode: Bool = false) {
         stop()
@@ -133,7 +133,8 @@ final class ChromecastRemoteHIDBridge {
 
     func stop() {
         activeDevice = nil
-        lastButtonID = nil
+        for button in Set(reportButtons.values) { apply(buttonID: button, isDown: false) }
+        reportButtons.removeAll()
         onConnectionChanged?(false)
 
         guard let manager else { return }
@@ -148,6 +149,7 @@ final class ChromecastRemoteHIDBridge {
 
     func setRemappingEnabled(_ enabled: Bool) {
         guard remappingEnabled != enabled else { return }
+        stop()
         remappingEnabled = enabled
         start()
     }
@@ -170,31 +172,21 @@ final class ChromecastRemoteHIDBridge {
     fileprivate func deviceDidRemove(_ device: IOHIDDevice) {
         guard let activeDevice, CFEqual(activeDevice, device) else { return }
         self.activeDevice = nil
+        for button in Set(reportButtons.values) { apply(buttonID: button, isDown: false) }
+        reportButtons.removeAll()
         onConnectionChanged?(false)
         print("[CAST-HID] disconnected")
     }
 
     fileprivate func handleReport(reportID: UInt32, data: Data) {
-        guard reportID == 0x01 else { return }
-        let payload = data.first == UInt8(truncatingIfNeeded: reportID)
-            ? Data(data.dropFirst())
-            : data
-        guard let usage = payload.first else { return }
-
-        if usage == 0 {
-            guard let buttonID = lastButtonID else { return }
-            lastButtonID = nil
-            apply(buttonID: buttonID, isDown: false)
-            return
-        }
-
-        let buttonID = String(format: "%02X", usage)
-        guard lastButtonID != buttonID else { return }
-        if let previous = lastButtonID {
-            apply(buttonID: previous, isDown: false)
-        }
-        lastButtonID = buttonID
-        apply(buttonID: buttonID, isDown: true)
+        print("[CAST-RAW] report=\(reportID) data=\(data.map { String(format: "%02X", $0) }.joined(separator: " "))")
+        guard let buttonID = ChromecastButtonReport.decode(reportID: reportID, data: data) else { return }
+        let previous = Set(reportButtons.values)
+        if buttonID == "00" { reportButtons.removeValue(forKey: reportID) }
+        else { reportButtons[reportID] = buttonID }
+        let current = Set(reportButtons.values)
+        for released in previous.subtracting(current) { apply(buttonID: released, isDown: false) }
+        for pressed in current.subtracting(previous) { apply(buttonID: pressed, isDown: true) }
     }
 
     private func apply(buttonID: String, isDown: Bool) {
