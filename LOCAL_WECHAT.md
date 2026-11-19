@@ -1,4 +1,4 @@
-# 本机微信输入法适配 · 编译 0124
+# 本机微信输入法适配 · 编译 0125
 
 控制台“语音输入法”可切换微信和豆包，默认微信。切换会停止当前录音。
 
@@ -17,3 +17,7 @@ swiftc Sources/vRemote/HoldVoiceSession.swift SelfTests/WeChat/main.swift -o /tm
 .build/vRemote-local --voice-session-self-test
 zsh Scripts/run-self-tests.sh
 ```
+
+## HID 共享模式（0125）
+
+采用上游 PR #10 的回退思路：独占访问返回 NotPrivileged 时，释放失败的管理器后新建共享管理器。映射可发送，但原始系统动作不能屏蔽，可能有双重动作。只在实机日志出现 CAST-MAP 并观察目标动作后确认映射成功。

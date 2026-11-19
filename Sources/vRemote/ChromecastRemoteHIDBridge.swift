@@ -63,7 +63,7 @@ final class ChromecastRemoteHIDBridge {
     private var remappingEnabled = RemoteMappingStore.shared.isEnabled(.chromecast)
     private var lastButtonID: String?
 
-    func start() {
+    func start(sharedMode: Bool = false) {
         stop()
         let manager = IOHIDManagerCreate(
             kCFAllocatorDefault,
@@ -102,10 +102,19 @@ final class ChromecastRemoteHIDBridge {
         // the match callback. The remote exposes more than one HID
         // collection; seizing only the first collection still lets its media
         // usage reach macOS (for example Select can launch Apple Music).
-        let openOptions = remappingEnabled
+        let openOptions = remappingEnabled && !sharedMode
             ? IOOptionBits(kIOHIDOptionsTypeSeizeDevice)
             : IOOptionBits(kIOHIDOptionsTypeNone)
         let result = IOHIDManagerOpen(manager, openOptions)
+        if result == kIOReturnNotPrivileged, remappingEnabled, !sharedMode {
+            // Recreate the manager: failed opens retain matched devices and
+            // retrying that same manager may lose their match/report callbacks.
+            IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+            IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+            print("[CAST-HID] 独占被拒绝，重建共享连接；原始系统动作不会被屏蔽")
+            start(sharedMode: true)
+            return
+        }
         guard result == kIOReturnSuccess else {
             print(
                 "[CAST-HID] manager open failed: " +
