@@ -761,6 +761,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
 // MARK: - Entry
 
+if CommandLine.arguments.contains("--chromecast-hid-probe") {
+    ChromecastHIDProbe.run()
+    exit(0)
+}
+
 #if DEBUG
 if CommandLine.arguments.contains("--voice-session-self-test") {
     exit(VoiceSessionSelfTest.run() ? EXIT_SUCCESS : EXIT_FAILURE)
