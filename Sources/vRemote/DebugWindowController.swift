@@ -183,7 +183,7 @@ private enum GuideAsset {
 
 private enum RemoteImageAsset {
     static func image(for remote: SupportedRemoteID) -> NSImage? {
-        let name = remote == .chromecast
+        let name = remote != .x6
             ? "chromecast-voice-remote"
             : "x6-remote"
         let candidates: [URL?] = [
@@ -259,6 +259,13 @@ private final class ConsoleViewModel: ObservableObject {
     @Published var bluetoothGranted = false
     @Published var x6Connected = false
     @Published var chromecastConnected = false
+    @Published var c3ReceiverPresent = false
+    @Published var c3RemoteConnected = false
+    @Published var c3VoiceReady = false
+    @Published var c3PairingStatus = ""
+    @Published var c3PairingActive = false
+    @Published var c3SerialPorts: [String] = []
+    @Published var c3SelectedPort = ""
     @Published var voiceBackend = VoiceInputBackend.selected
     @Published var inputTriggerKey = AppStorage.inputTriggerKey
     @Published var activeModal: ConsoleModal?
@@ -275,6 +282,8 @@ private final class ConsoleViewModel: ObservableObject {
     var onVoiceBackendChanged: ((VoiceInputBackend) -> Void)?
     var onInputTriggerChanged: (() -> Void)?
     var onRemoteMappingEnabledChanged: ((SupportedRemoteID, Bool) -> Void)?
+    var onC3PairingRequested: (() -> Void)?
+    var onC3PortSelected: ((String) -> Void)?
 
     var doubaoUsesVRemote: Bool { doubaoInput.contains("vRemoteDr 2ch") }
 
@@ -428,6 +437,8 @@ final class DebugWindowController: NSWindowController, NSWindowDelegate {
     var onVoiceBackendChanged: ((VoiceInputBackend) -> Void)?
     var onInputTriggerChanged: (() -> Void)?
     var onRemoteMappingEnabledChanged: ((SupportedRemoteID, Bool) -> Void)?
+    var onC3PairingRequested: (() -> Void)?
+    var onC3PortSelected: ((String) -> Void)?
 
     private let model = ConsoleViewModel()
     private var permissionTimer: Timer?
@@ -459,6 +470,8 @@ final class DebugWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
 
         model.onStopMicrophone = { [weak self] in self?.onStopMicrophone?() }
+        model.onC3PairingRequested = { [weak self] in self?.onC3PairingRequested?() }
+        model.onC3PortSelected = { [weak self] port in self?.onC3PortSelected?(port) }
         model.onRestartApp = { [weak self] in self?.onRestartApp?() }
         model.onMacInputEnabledChanged = { [weak self] enabled in
             self?.onMacInputEnabledChanged?(enabled)
@@ -507,6 +520,9 @@ final class DebugWindowController: NSWindowController, NSWindowDelegate {
         driverAvailable: Bool,
         x6Connected: Bool,
         chromecastConnected: Bool,
+        c3ReceiverPresent: Bool = false,
+        c3RemoteConnected: Bool = false,
+        c3VoiceReady: Bool = false,
         macLevelDB: Double? = nil,
         remoteLevelDB: Double? = nil
     ) {
@@ -523,10 +539,26 @@ final class DebugWindowController: NSWindowController, NSWindowDelegate {
             self.model.driverAvailable = driverAvailable
             self.model.x6Connected = x6Connected
             self.model.chromecastConnected = chromecastConnected
+            self.model.c3ReceiverPresent = c3ReceiverPresent
+            self.model.c3RemoteConnected = c3RemoteConnected
+            self.model.c3VoiceReady = c3VoiceReady
             if let macLevelDB { self.model.macLevelDB = macLevelDB }
             if let remoteLevelDB { self.model.remoteLevelDB = remoteLevelDB }
             self.model.refreshPermissions()
         }
+    }
+
+    func updateC3PairingStatus(_ status: String) {
+        model.c3PairingStatus = status
+    }
+
+    func updateC3PairingActive(_ active: Bool) {
+        model.c3PairingActive = active
+    }
+
+    func updateC3Ports(_ ports: [String], selected: String) {
+        model.c3SerialPorts = ports
+        model.c3SelectedPort = selected
     }
 
     func updateMacLevel(_ db: Double) {
@@ -684,6 +716,12 @@ private struct StudioMixerView: View {
     }
 
     private var statusText: String {
+        if model.c3ReceiverPresent && !model.bleConnected {
+            if !model.accessibilityGranted { return L10n.text("需要辅助功能授权", "Accessibility required") }
+            return model.c3RemoteConnected
+                ? (model.c3VoiceReady ? L10n.text("按键与语音已就绪", "Buttons and voice ready") : L10n.text("按键已就绪", "Buttons ready"))
+                : L10n.text("等待遥控器", "Waiting for remote")
+        }
         if !model.microphoneGranted || !model.accessibilityGranted || !model.inputMonitoringGranted {
             return L10n.text("需要处理", "Action needed")
         }
@@ -694,6 +732,9 @@ private struct StudioMixerView: View {
     }
 
     private var statusColor: Color {
+        if model.c3ReceiverPresent && !model.bleConnected {
+            return !model.accessibilityGranted ? ConsoleTheme.red : (model.c3RemoteConnected ? ConsoleTheme.green : ConsoleTheme.amber)
+        }
         if model.remoteStreaming { return ConsoleTheme.amber }
         if !model.microphoneGranted || !model.accessibilityGranted || !model.inputMonitoringGranted {
             return ConsoleTheme.red
@@ -760,8 +801,8 @@ private struct StudioMixerView: View {
             StatusRow(
                 title: L10n.text("遥控器连接", "Remote connection"),
                 value: x6Value,
-                tone: model.hidConnected && model.bleConnected ? .good : .warning,
-                action: model.hidConnected && model.bleConnected
+                tone: model.c3RemoteConnected || (model.hidConnected && model.bleConnected) ? .good : .warning,
+                action: model.c3ReceiverPresent || (model.hidConnected && model.bleConnected)
                     ? nil
                     : L10n.text("蓝牙设置", "Bluetooth settings"),
                 onAction: { model.activeModal = .permission(.bluetooth) }
@@ -799,6 +840,13 @@ private struct StudioMixerView: View {
     }
 
     private var x6Value: String {
+        if model.c3ReceiverPresent && !model.bleConnected {
+            return model.c3RemoteConnected
+                ? (model.c3VoiceReady
+                    ? L10n.text("C3 USB 按键与语音已就绪", "C3 USB buttons and voice ready")
+                    : L10n.text("C3 USB 按键已就绪 · 语音协商中", "C3 USB buttons ready · Connecting voice"))
+                : L10n.text("C3 USB 已连接 · 按一下遥控器唤醒", "C3 USB connected · Press a remote button to wake")
+        }
         if model.hidConnected && model.bleConnected {
             return model.remoteStreaming
                 ? L10n.text("HID · BLE · 语音流传输中", "HID · BLE · Streaming")
@@ -863,6 +911,9 @@ private struct KeyMappingView: View {
                 mappingPanel
             }
         }
+        .onAppear {
+            if model.c3ReceiverPresent { selectedDevice = .chromecastC3 }
+        }
     }
 
     private var triggerPanel: some View {
@@ -871,11 +922,17 @@ private struct KeyMappingView: View {
                 HStack(spacing: 7) {
                     Image(systemName: "waveform.badge.mic")
                         .foregroundStyle(ConsoleTheme.green)
-                    Text(model.voiceBackend == .wechat ? "微信语音 · 按住 Fn" : "豆包语音触发键")
+                    Text(selectedDevice == .chromecastC3
+                        ? L10n.text("C3 USB 接收器", "C3 USB receiver")
+                        : (model.voiceBackend == .wechat ? "微信语音 · 按住 Fn" : "豆包语音触发键"))
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(ConsoleTheme.text)
                 }
-                Text(L10n.text(
+                Text(selectedDevice == .chromecastC3
+                    ? (model.c3VoiceReady
+                        ? L10n.text("普通按键使用下方映射。语音键按住说话，松手结束。", "Use the mappings below. Hold the voice key to talk, then release.")
+                        : L10n.text("普通按键使用下方映射。正在连接接收器语音服务。", "Use the mappings below. Connecting receiver voice service."))
+                    : L10n.text(
                     model.voiceBackend == .wechat ? "微信设置：按住说话 = Fn；麦克风 = vRemoteDr 2ch。遥控器按住说话，松手结束。" : "这里必须与豆包输入法中的语音快捷键保持一致。",
                     "The remote voice key and Mac keyboard both use this trigger. It must match Doubao Input Method's voice shortcut."
                 ))
@@ -942,6 +999,13 @@ private struct KeyMappingView: View {
             ) { selectedDevice = .chromecast }
 
             DeviceSelectionRow(
+                title: SupportedRemoteID.chromecastC3.title,
+                signature: SupportedRemoteID.chromecastC3.signature,
+                connected: model.c3RemoteConnected,
+                selected: selectedDevice == .chromecastC3
+            ) { selectedDevice = .chromecastC3 }
+
+            DeviceSelectionRow(
                 title: SupportedRemoteID.x6.title,
                 signature: SupportedRemoteID.x6.signature,
                 connected: model.x6Connected,
@@ -969,12 +1033,41 @@ private struct KeyMappingView: View {
             VStack(spacing: 10) {
                 RemoteProductImage(kind: selectedDevice)
                     .frame(width: 128)
-                Text(selectedDevice == .chromecast
+                Text(selectedDevice != .x6
                     ? L10n.text("14 个可映射键", "14 mappable buttons")
                     : L10n.text("15 个正面可映射键", "15 mappable front buttons"))
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(ConsoleTheme.secondary)
                     .multilineTextAlignment(.center)
+                if selectedDevice == .chromecastC3 {
+                    Picker(L10n.text("C3 串口", "C3 serial port"), selection: Binding(
+                        get: { model.c3SelectedPort },
+                        set: { model.onC3PortSelected?($0) }
+                    )) {
+                        Text(L10n.text("自动识别", "Automatic")).tag("")
+                        ForEach(model.c3SerialPorts, id: \.self) { port in
+                            Text(port.replacingOccurrences(of: "/dev/cu.", with: "")).tag(port)
+                        }
+                        if !model.c3SelectedPort.isEmpty && !model.c3SerialPorts.contains(model.c3SelectedPort) {
+                            Text(L10n.text("串口已断开", "Port disconnected")).tag(model.c3SelectedPort)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 120)
+                    Button(model.c3RemoteConnected
+                        ? L10n.text("重新配对", "Pair again")
+                        : L10n.text("开始配对", "Pair remote")) {
+                        model.onC3PairingRequested?()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.c3ReceiverPresent || model.c3PairingActive)
+                    Text(model.c3PairingStatus.isEmpty
+                        ? L10n.text("按住返回＋主页进入配对", "Hold Back + Home to pair")
+                        : model.c3PairingStatus)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(ConsoleTheme.secondary)
+                        .multilineTextAlignment(.center)
+                }
                 if selectedDevice == .x6 {
                     Text(L10n.text(
                         "鼠标模式键由设备内部处理",
@@ -1017,7 +1110,10 @@ private struct KeyMappingView: View {
                             MappingRow(
                                 remote: selectedDevice,
                                 button: button,
-                                enabled: mappings.isEnabled(selectedDevice)
+                                enabled: mappings.isEnabled(selectedDevice),
+                                receiverVoiceStatus: selectedDevice == .chromecastC3
+                                    ? (model.c3VoiceReady ? model.voiceBackend.title : L10n.text("语音协商中", "Connecting voice"))
+                                    : nil
                             )
                         }
                     }
@@ -1097,6 +1193,7 @@ private struct MappingRow: View {
     let remote: SupportedRemoteID
     let button: RemoteButtonDefinition
     let enabled: Bool
+    var receiverVoiceStatus: String? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1113,7 +1210,7 @@ private struct MappingRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(ConsoleTheme.tertiary)
             } else if button.voiceControlled {
-                Text(RemoteMappingTarget.doubaoVoice.title)
+                Text(receiverVoiceStatus ?? RemoteMappingTarget.doubaoVoice.title)
                     .font(.system(size: 11))
                     .foregroundStyle(ConsoleTheme.green)
             } else {
@@ -1329,12 +1426,12 @@ private struct RemoteProductImage: View {
     var body: some View {
         Group {
             if let image = RemoteImageAsset.image(for: kind) {
-                if kind == .chromecast {
+                if kind != .x6 {
                     Image(nsImage: image)
                         .resizable()
                         .interpolation(.high)
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 112, height: 304)
+                        .frame(width: 112, height: kind == .chromecastC3 ? 230 : 304)
                 } else {
                     Image(nsImage: image)
                         .resizable()
@@ -1353,7 +1450,7 @@ private struct RemoteProductImage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .frame(height: kind == .chromecast ? 304 : 260)
+        .frame(height: kind == .chromecastC3 ? 230 : (kind == .chromecast ? 304 : 260))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(kind.title)
     }

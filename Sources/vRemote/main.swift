@@ -38,12 +38,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var chromecastHIDConnected = false
     private var chromecastBLEConnected = false
     private var chromecastRemoteStreaming = false
+    private var c3ReceiverPresent = false
+    private var c3RemoteConnected = false
+    private var c3VoiceReady = false
+    private var c3Streaming = false
+    private var c3PairingActive = false
     private var remoteStreaming = false
 
     private var lastVoiceRemote: VoiceRemoteID?
 
     private let x6 = X6HIDBridge()
     private let chromecastHID = ChromecastRemoteHIDBridge()
+    private let c3Serial = C3SerialBridge()
+    private let c3Voice = C3VoiceBridge()
     private let x6SearchSuppressor = X6SearchSuppressor()
     private let doubaoAudioState = DoubaoAudioStateMonitor()
     private lazy var x6Session = X6SessionCoordinator(
@@ -209,6 +216,59 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard AudioPipe.shared.isRemoteInputEnabled else { return }
             self?.debugWindow.updateRemoteLevel(db)
         }
+        c3Serial.onPresenceChanged = { [weak self] present in
+            self?.c3ReceiverPresent = present
+            self?.updateStatus()
+        }
+        c3Serial.onPairingActiveChanged = { [weak self] active in
+            guard let self, self.c3PairingActive != active else { return }
+            self.c3PairingActive = active
+            self.debugWindow.updateC3PairingActive(active)
+            if active {
+                self.chromecastBLE.stop()
+                self.chromecastHID.stop()
+            } else {
+                self.chromecastHID.start()
+                self.chromecastBLE.start()
+            }
+        }
+        c3Serial.onConnectionChanged = { [weak self] connected in
+            self?.c3RemoteConnected = connected
+            self?.c3Voice.setConnected(connected)
+            if !connected { self?.x6Session.remoteDisconnected(.chromecastC3) }
+            self?.updateStatus()
+        }
+        c3Voice.sendCommand = { [weak self] data in self?.c3Serial.sendVoiceCommand(data) ?? false }
+        c3Serial.onVoiceControl = { [weak self] data in self?.c3Voice.receiveControl(data) }
+        c3Serial.onVoiceAudio = { [weak self] data in self?.c3Voice.receiveAudio(data) }
+        c3Serial.onVoiceFault = { [weak self] reason in self?.c3Voice.transportFailed(reason) }
+        c3Voice.onAvailableChanged = { [weak self] ready in
+            self?.c3VoiceReady = ready
+            self?.updateStatus()
+        }
+        c3Voice.onAudioStarted = { [weak self] reason in
+            self?.c3Streaming = true
+            self?.lastVoiceRemote = .chromecastC3
+            self?.x6Session.remoteAudioStarted(remote: .chromecastC3, reason: reason, supportsPhysicalHoldGesture: true)
+            self?.refreshCombinedStreaming()
+            self?.updateStatus()
+        }
+        c3Voice.onAudioStopped = { [weak self] reason in
+            self?.c3Streaming = false
+            self?.x6Session.remoteAudioStopped(remote: .chromecastC3, reason: reason)
+            self?.refreshCombinedStreaming()
+            self?.updateStatus()
+        }
+        c3Voice.onMicrophoneOpenFailed = { [weak self] code in
+            self?.x6Session.remoteMicrophoneOpenFailed(remote: .chromecastC3, code: code)
+        }
+        c3Voice.onLevel = { [weak self] db in self?.debugWindow.updateRemoteLevel(db) }
+        c3Serial.onPortsChanged = { [weak self] ports, selected in
+            self?.debugWindow.updateC3Ports(ports, selected: selected)
+        }
+        c3Serial.onPairingStatusChanged = { [weak self] status in
+            self?.debugWindow.updateC3PairingStatus(status)
+        }
         chromecastHID.onConnectionChanged = { [weak self] connected in
             self?.chromecastHIDConnected = connected
             AppAnalytics.signal(
@@ -293,6 +353,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         x6BLE.start()
         chromecastHID.start()
         chromecastBLE.start()
+        c3Serial.start()
 
         // Start the loopback engine eagerly so device binding is verified
         // before the first BLE audio packet arrives.
@@ -484,7 +545,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateStatus() {
-        let anyHID = x6HIDConnected || chromecastHIDConnected
+        let anyHID = x6HIDConnected || chromecastHIDConnected || c3RemoteConnected
         let anyBLE = x6BLEConnected || chromecastBLEConnected
         let doubaoSnapshot = doubaoAudioState.snapshotNow()
         let doubaoUsesVRemote = doubaoSnapshot.inputDeviceNames.contains("vRemoteDr 2ch")
@@ -493,6 +554,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusText = L10n.text("豆包输入设备错误", "Incorrect Doubao input")
         } else if remoteStreaming {
             statusText = L10n.text("遥控器录音中", "Remote recording")
+        } else if c3ReceiverPresent && !chromecastHIDConnected && !chromecastBLEConnected {
+            statusText = c3RemoteConnected
+                ? (c3VoiceReady ? L10n.text("C3 按键与语音已就绪", "C3 buttons and voice ready") : L10n.text("C3 按键已就绪", "C3 buttons ready"))
+                : L10n.text("C3 等待遥控器", "C3 waiting for remote")
         } else if anyHID && anyBLE {
             statusText = L10n.text("已就绪", "Ready")
         } else if anyHID || anyBLE {
@@ -514,12 +579,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             driverAvailable: AudioPipe.shared.isOutputDeviceAvailable,
             x6Connected: x6HIDConnected || x6BLEConnected,
             chromecastConnected: chromecastHIDConnected || chromecastBLEConnected,
+            c3ReceiverPresent: c3ReceiverPresent,
+            c3RemoteConnected: c3RemoteConnected,
+            c3VoiceReady: c3VoiceReady,
             macLevelDB: nil,
             remoteLevelDB: nil
         )
     }
 
     private func wireDebugWindow() {
+        debugWindow.onC3PortSelected = { [weak self] port in
+            self?.c3Serial.selectPort(port)
+        }
+        debugWindow.onC3PairingRequested = { [weak self] in
+            self?.c3Serial.beginPairing()
+        }
         debugWindow.onStopMicrophone = { [weak self] in
             self?.stopMicrophoneNow()
         }
@@ -543,6 +617,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if !enabled {
                 self?.x6BLE.closeMicrophone(force: true)
                 self?.chromecastBLE.closeMicrophone(force: true)
+                self?.c3Voice.closeMicrophone()
                 self?.debugWindow.updateRemoteLevel(-120)
             } else if self?.doubaoAudioState.snapshotNow().isRecording == true {
                 self?.openPreferredRemoteMicrophone()
@@ -557,7 +632,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case .x6:
                 self?.x6.setRemappingEnabled(enabled)
             case .chromecast:
-                self?.chromecastHID.setRemappingEnabled(enabled)
+                self?.chromecastHID.setRemappingEnabled(enabled, restart: self?.c3PairingActive == false)
+            case .chromecastC3:
+                self?.c3Serial.setRemappingEnabled(enabled)
             }
         }
     }
@@ -600,6 +677,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
         x6Session.forceClose()
         x6BLE.closeMicrophone(force: true)
         chromecastBLE.closeMicrophone(force: true)
+        c3Voice.closeMicrophone()
         AudioPipe.shared.setRemoteActive(false)
         updateStatus()
     }
@@ -628,7 +706,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshCombinedStreaming() {
-        remoteStreaming = x6RemoteStreaming || chromecastRemoteStreaming
+        remoteStreaming = x6RemoteStreaming || chromecastRemoteStreaming || c3Streaming
     }
 
     private func preferredVoiceRemote() -> VoiceRemoteID? {
@@ -638,12 +716,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return .x6
             case .chromecast where chromecastBLEConnected:
                 return .chromecast
+            case .chromecastC3 where c3VoiceReady:
+                return .chromecastC3
             default:
                 break
             }
         }
         if x6BLEConnected { return .x6 }
         if chromecastBLEConnected { return .chromecast }
+        if c3VoiceReady { return .chromecastC3 }
         return nil
     }
 
@@ -660,6 +741,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return chromecastBLE.openMicrophone(
                 bypassDebounce: bypassDebounce
             )
+        case .chromecastC3:
+            return c3Voice.openMicrophone()
         }
     }
 
@@ -671,6 +754,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func closeAllRemoteMicrophones() {
         x6BLE.closeMicrophone(force: true)
         chromecastBLE.closeMicrophone(force: true)
+        c3Voice.closeMicrophone()
     }
 
     private func refreshMenuState() {
@@ -748,6 +832,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         x6.stop()
+        c3Serial.onPresenceChanged = nil
+        c3Serial.onConnectionChanged = nil
+        c3Serial.onPairingActiveChanged = nil
+        c3Voice.stop()
+        c3Serial.stop()
         chromecastHID.stop()
         x6SearchSuppressor.stop()
         x6Session.stop()

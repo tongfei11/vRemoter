@@ -12,6 +12,15 @@ vRemoter 把蓝牙语音遥控器变成 macOS 上的 Vibe Coding 控制器：遥
 
 - X6-Remote（VID `0x1D5A` / PID `0xC081`）
 - Google Chromecast Remote（VID `0x18D1` / PID `0x9450`）
+- Chromecast · C3 接收器，通过 USB 串口连接，单独保存映射设置。
+
+### C3 USB 接收器
+
+将 [Chromecast C3 Receiver 开源固件](https://github.com/tongfei11/chromecast-c3-receiver) 按开发板的 UART0 或原生 USB 接线方式编译烧录。固件默认使用 `115200`，需要在本地配置中填写目标遥控器地址。
+
+连接 USB 后，在按键映射页选择“Chromecast · C3 接收器”。AlphaPi 串口可自动识别，其他板卡可用图片下方的串口菜单选择。点击“开始配对”或“重新配对”，再按住遥控器“返回＋主页”。配对期间临时暂停 Mac 的原生 Chromecast 直连扫描，完成或失败后恢复。
+
+C3 接收器支持普通按键映射和 ATVV 语音。语音继续使用应用现有的微信或豆包输入法配置，输入法的麦克风选择 `vRemoteDr 2ch`。当前已实测 ESP32-C3 UART0 的按键、拔插恢复和微信语音输入，原生 USB 固件已编译验证，仍需对应开发板实测。
 
 Chromecast Remote 已实现语音键双模式：短按第一次打开、第二次关闭；长按时持续录音，松手自动关闭。APP 还提供按型号保存的按键映射，可把方向、确认、返回、Home、YouTube、Netflix、信源、音量等按键改为常用 macOS 操作。
 

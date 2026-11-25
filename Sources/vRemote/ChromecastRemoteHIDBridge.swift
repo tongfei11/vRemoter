@@ -155,11 +155,11 @@ final class ChromecastRemoteHIDBridge {
         inputBuffers.removeAll()
     }
 
-    func setRemappingEnabled(_ enabled: Bool) {
+    func setRemappingEnabled(_ enabled: Bool, restart: Bool = true) {
         guard remappingEnabled != enabled else { return }
         stop()
         remappingEnabled = enabled
-        start()
+        if restart { start() }
     }
 
     fileprivate func deviceDidMatch(

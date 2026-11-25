@@ -4,6 +4,7 @@ import Foundation
 
 enum SupportedRemoteID: String, CaseIterable, Identifiable, Codable {
     case chromecast
+    case chromecastC3
     case x6
 
     var id: String { rawValue }
@@ -11,6 +12,7 @@ enum SupportedRemoteID: String, CaseIterable, Identifiable, Codable {
     var title: String {
         switch self {
         case .chromecast: "Chromecast Voice Remote"
+        case .chromecastC3: L10n.text("Chromecast · C3 接收器", "Chromecast · C3 receiver")
         case .x6: "X6 Remote"
         }
     }
@@ -18,6 +20,7 @@ enum SupportedRemoteID: String, CaseIterable, Identifiable, Codable {
     var signature: String {
         switch self {
         case .chromecast: "18D1 · 9450"
+        case .chromecastC3: "C3 · USB"
         case .x6: "1D5A · C081"
         }
     }
@@ -69,7 +72,7 @@ enum RemoteProfiles {
 
     static func buttons(for remote: SupportedRemoteID) -> [RemoteButtonDefinition] {
         switch remote {
-        case .chromecast: chromecastButtons
+        case .chromecast, .chromecastC3: chromecastButtons
         case .x6: x6Buttons
         }
     }
@@ -363,7 +366,10 @@ final class RemoteMappingStore: ObservableObject {
     private init() {}
 
     func isEnabled(_ remote: SupportedRemoteID) -> Bool {
-        defaults.bool(forKey: enabledPrefix + remote.rawValue)
+        if remote == .chromecastC3, defaults.object(forKey: enabledPrefix + remote.rawValue) == nil {
+            return true
+        }
+        return defaults.bool(forKey: enabledPrefix + remote.rawValue)
     }
 
     func setEnabled(_ enabled: Bool, for remote: SupportedRemoteID) {

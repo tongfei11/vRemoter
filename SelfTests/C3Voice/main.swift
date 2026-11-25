@@ -36,6 +36,8 @@ require(commands.last == Data([0x0c,0]), "correct microphone-open command")
 voice.receiveControl(Data([4,3,2,1]))
 voice.receiveAudio(Data([0x11,0x22]))
 require(starts == [3] && AudioPipe.shared.samples.count == 4, "physical start and ADPCM samples reach audio route")
+voice.receiveControl(Data([4,3,2,1]))
+require(stops.isEmpty, "repeated AUDIO_START must not release the held voice trigger")
 RunLoop.current.run(until: Date().addingTimeInterval(3.8))
 voice.closeMicrophone()
 let closingCommandCount = commands.count

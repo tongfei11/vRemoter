@@ -3,6 +3,7 @@ import Foundation
 enum VoiceRemoteID: String, CaseIterable {
     case x6
     case chromecast
+    case chromecastC3
 }
 
 enum RemoteMicrophoneOpenResult: Equatable {
@@ -141,7 +142,7 @@ final class X6SessionCoordinator {
     ) {
         if VoiceInputBackend.selected == .wechat {
             // Only physical Chromecast presses may begin recognition; ignore stale host starts.
-            guard remote != .chromecast || reason == 0x03 else { return }
+            guard (remote != .chromecast && remote != .chromecastC3) || reason == 0x03 else { return }
             wechatSession.start(remote.rawValue)
             publish("微信按住说话 · 松手结束")
             return
@@ -215,7 +216,7 @@ final class X6SessionCoordinator {
             // an earlier host request. X6 is different: its verified physical
             // first press itself arrives as reason 0x00 and must remain a
             // valid open gesture.
-            guard remote != .chromecast || reason != 0x00 else {
+            guard (remote != .chromecast && remote != .chromecastC3) || reason != 0x00 else {
                 print(
                     "[VOICE-SESSION] stale host AUDIO_START ignored " +
                     "remote=\(remote.rawValue)"

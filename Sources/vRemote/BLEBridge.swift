@@ -107,6 +107,9 @@ final class BLEBridge: NSObject {
 
     func stop() {
         isStarted = false
+        connectTimeout?.cancel()
+        connectTimeout = nil
+        central.stopScan()
         closeTimeoutWorkItem?.cancel()
         closeTimeoutWorkItem = nil
         stopKeepAliveTimer()
@@ -124,6 +127,8 @@ final class BLEBridge: NSObject {
         audioChar = nil
         commandChar = nil
         controlChar = nil
+        connectedPeripheralID = nil
+        onConnectionChanged?(false)
     }
 
     func setRecordingEnabled(_ enabled: Bool) {
@@ -220,6 +225,7 @@ final class BLEBridge: NSObject {
     /// the peripheral directly. This works even when the device is HID-paired
     /// (advertisement scan returns nothing in that case).
     private func tryDirectConnect() {
+        guard isStarted else { return }
         // Prefer the currently connected physical device over a persisted
         // UUID. This makes same-model replacement remotes work without
         // manually deleting x6-uuid.txt from the previous unit.
@@ -258,6 +264,7 @@ final class BLEBridge: NSObject {
     }
 
     private func beginScan() {
+        guard isStarted else { return }
         print("[\(logTag)] 扫描中（按名字 \(nameHint ?? "?") + ATVV service 过滤）")
         central.scanForPeripherals(
             withServices: nil,
@@ -280,7 +287,7 @@ final class BLEBridge: NSObject {
         to p: CBPeripheral,
         allowTimeoutFallback: Bool = false
     ) {
-        guard matches(p) else { return }
+        guard isStarted, matches(p) else { return }
         connectTimeout?.cancel()
         peripheral = p
         connectedPeripheralID = nil
@@ -293,7 +300,7 @@ final class BLEBridge: NSObject {
         guard allowTimeoutFallback else { return }
         let id = p.identifier
         let work = DispatchWorkItem { [weak self, weak p] in
-            guard let self, self.connectedPeripheralID != id else { return }
+            guard let self, self.isStarted, self.connectedPeripheralID != id else { return }
             print("[\(self.logTag)] 已存 UUID 连接超时，改为扫描新设备")
             if let p {
                 self.central.cancelPeripheralConnection(p)
@@ -437,6 +444,10 @@ extension BLEBridge: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        guard isStarted, self.peripheral === peripheral else {
+            central.cancelPeripheralConnection(peripheral)
+            return
+        }
         connectTimeout?.cancel()
         connectTimeout = nil
         connectedPeripheralID = peripheral.identifier
@@ -451,6 +462,7 @@ extension BLEBridge: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager,
                         didFailToConnect peripheral: CBPeripheral,
                         error: Error?) {
+        guard isStarted, self.peripheral === peripheral else { return }
         connectTimeout?.cancel()
         connectTimeout = nil
         connectedPeripheralID = nil
@@ -462,6 +474,7 @@ extension BLEBridge: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager,
                         didDisconnectPeripheral peripheral: CBPeripheral,
                         error: Error?) {
+        guard isStarted, self.peripheral === peripheral else { return }
         connectTimeout?.cancel()
         connectTimeout = nil
         closeTimeoutWorkItem?.cancel()
@@ -480,6 +493,7 @@ extension BLEBridge: CBCentralManagerDelegate {
 
 extension BLEBridge: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard isStarted, self.peripheral === peripheral else { return }
         guard error == nil, let services = peripheral.services else {
             print("[\(logTag)] 服务发现失败: \(error?.localizedDescription ?? "?")")
             return
@@ -497,6 +511,7 @@ extension BLEBridge: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral,
                     didDiscoverCharacteristicsFor service: CBService,
                     error: Error?) {
+        guard isStarted, self.peripheral === peripheral else { return }
         guard error == nil, let chars = service.characteristics else { return }
         for c in chars {
             let props = describeProperties(c.properties)
@@ -555,12 +570,14 @@ extension BLEBridge: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral,
                     didUpdateNotificationStateFor characteristic: CBCharacteristic,
                     error: Error?) {
+        guard isStarted, self.peripheral === peripheral else { return }
         print("[\(logTag)] NOTIFY \(characteristic.uuid.uuidString) enabled=\(characteristic.isNotifying) error=\(error?.localizedDescription ?? "none")")
     }
 
     func peripheral(_ peripheral: CBPeripheral,
                     didUpdateValueFor characteristic: CBCharacteristic,
                     error: Error?) {
+        guard isStarted, self.peripheral === peripheral else { return }
         if let error {
             print("[\(logTag)] char update error: \(error.localizedDescription)")
             return

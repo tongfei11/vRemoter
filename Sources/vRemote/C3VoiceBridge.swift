@@ -83,7 +83,9 @@ final class C3VoiceBridge {
             }
             closeTimer?.invalidate()
             closeTimer = nil
-            if streaming { finish(reason: 0xFD) }
+            // Repeated AUDIO_START resets the decoder without releasing a held voice trigger.
+            recorder?.close()
+            recorder = nil
             handler.beginAudioStream(codec: codec)
             streamID = id
             streaming = true
