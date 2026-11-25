@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.2.3</string>
+    <string>1.2.3-c3</string>
     <key>CFBundleVersion</key>
-    <string>0132</string>
+    <string>0133</string>
     <key>VRemoterBetaSuffix</key>
     <string></string>
     <key>LSMinimumSystemVersion</key>
@@ -29,11 +29,11 @@
     <key>LSUIElement</key>
     <true/>
     <key>VRReleasesURL</key>
-    <string>https://updates.vincentstudio.org/vremoter/releases.json</string>
+    <string>https://api.github.com/repos/tongfei11/vRemoter/releases</string>
     <key>VRCommerceConfigURL</key>
     <string>https://updates.vincentstudio.org/vremoter/commerce.json</string>
 	<key>VRTelemetryDeckAppID</key>
-	<string>0B41E7AD-49DA-4A8F-B216-BCF13B3A2D25</string>
+	<string></string>
 	<key>VRTelemetryDeckNamespace</key>
 	<string>cn.live</string>
     <key>NSBluetoothAlwaysUsageDescription</key>

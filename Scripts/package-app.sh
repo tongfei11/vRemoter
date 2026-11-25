@@ -10,14 +10,22 @@ CONTENTS="$APP/Contents"
 cd "$SCRIPT_DIR"
 # --disable-sandbox: 本机 SwiftPM manifest 编译沙箱被系统策略禁用（sandbox_apply 被拒）；
 # 对普通环境无行为差异，仅跳过 manifest 编译的嵌套沙箱。
-swift build -c release --disable-sandbox
+if [[ "${VREMOTER_LOCAL_BUILD:-0}" == "1" ]]; then
+  mkdir -p "$SCRIPT_DIR/.build/release-local"
+  swiftc -O -D LOCAL_BUILD -target "$(uname -m)-apple-macosx12.0" \
+    Sources/vRemote/**/*.swift -o .build/release-local/vRemote
+  APP_BINARY="$SCRIPT_DIR/.build/release-local/vRemote"
+else
+  swift build -c release --disable-sandbox
+  APP_BINARY="$SCRIPT_DIR/.build/release/vRemote"
+fi
 
 rm -rf "$APP"
 mkdir -p "$CONTENTS/MacOS"
 mkdir -p "$CONTENTS/Resources"
-cp "$SCRIPT_DIR/.build/release/vRemote" "$CONTENTS/MacOS/vRemote"
+cp "$APP_BINARY" "$CONTENTS/MacOS/vRemote"
 cp "$SCRIPT_DIR/Packaging/Info.plist" "$CONTENTS/Info.plist"
-for resource_bundle in "$SCRIPT_DIR/.build/release/"*.bundle; do
+for resource_bundle in "$SCRIPT_DIR/.build/release/"*.bundle(N); do
   [[ -d "$resource_bundle" ]] || continue
   ditto "$resource_bundle" "$CONTENTS/Resources/${resource_bundle:t}"
 done

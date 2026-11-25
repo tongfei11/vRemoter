@@ -1,5 +1,9 @@
 # vRemoter
 
+本 fork 的 C3 改版为 **1.2.3-c3**，新增独立 C3 USB 接收器、配对按钮、串口按键映射及 ATVV 语音。
+
+[下载 C3 改版](https://github.com/tongfei11/vRemoter/releases/tag/v1.2.3-c3) · [C3 接收器固件](https://github.com/tongfei11/chromecast-c3-receiver/releases)
+
 > 本仓库保存 vRemoter 的源码、设计源稿、构建脚本与测试。普通用户请通过 `vincentstudio.org` 系列域名访问官网、下载与更新服务。
 
 [官方网站](https://vremoter.vincentstudio.org/) · [下载最新版](https://updates.vincentstudio.org/vremoter/) · [v1.2.3 Release](https://github.com/VincentKingHsu/vRemoter/releases/tag/v1.2.3)
@@ -24,7 +28,7 @@ C3 接收器支持普通按键映射和 ATVV 语音。语音继续使用应用�
 
 Chromecast Remote 已实现语音键双模式：短按第一次打开、第二次关闭；长按时持续录音，松手自动关闭。APP 还提供按型号保存的按键映射，可把方向、确认、返回、Home、YouTube、Netflix、信源、音量等按键改为常用 macOS 操作。
 
-当前版本：`1.2.3`
+当前版本：`1.2.3-c3`
 
 ## 1.2.3 新功能
 
@@ -130,3 +134,12 @@ APP 从以下地址读取版本清单：
 - [第三方许可说明](THIRD_PARTY_NOTICES.md)
 - [音频驱动说明](Driver/README.md)
 - [冻结 UI 说明](Design/vRemoter-UI-v1-Frozen/UI-FREEZE.md)
+
+
+## C3 改版应用构建
+
+```sh
+VREMOTER_LOCAL_BUILD=1 Scripts/build-dmg.sh
+```
+
+该选项用系统 Swift 编译器构建应用，使用已有 `LOCAL_BUILD` 配置。`1.2.3-c3` 发布资产为 Apple Silicon 应用 DMG，语音需要已安装 `vRemoteDr 2ch`。应用采用本地 ad-hoc 签名，未公证。更新检查指向本 fork 的 GitHub Releases。
