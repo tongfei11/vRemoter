@@ -5,7 +5,7 @@
 import Foundation
 
 final class WavRecorder {
-    static func createNext(prefix: String) -> WavRecorder? {
+    static func createNext(prefix: String, sampleRate: UInt32 = 16_000) -> WavRecorder? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
@@ -14,7 +14,7 @@ final class WavRecorder {
         AppStorage.ensureDirectory(dir)
         let wavURL = dir.appendingPathComponent("\(base).wav")
         let rawURL = dir.appendingPathComponent("\(base).raw.bin")
-        return WavRecorder(wavURL: wavURL, rawURL: rawURL, basename: base)
+        return WavRecorder(wavURL: wavURL, rawURL: rawURL, basename: base, sampleRate: sampleRate)
     }
 
     let basename: String
@@ -23,11 +23,12 @@ final class WavRecorder {
     private var wavHandle: FileHandle?
     private var rawHandle: FileHandle?
     private var totalFrames: UInt64 = 0
-    private let sampleRate: UInt32 = 16_000
+    private let sampleRate: UInt32
     private let channels: UInt16 = 1
     private let bitsPerSample: UInt16 = 16
 
-    init?(wavURL: URL, rawURL: URL, basename: String) {
+    init?(wavURL: URL, rawURL: URL, basename: String, sampleRate: UInt32 = 16_000) {
+        self.sampleRate = sampleRate
         self.wavURL = wavURL
         self.rawURL = rawURL
         self.basename = basename

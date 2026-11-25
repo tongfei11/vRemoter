@@ -14,3 +14,19 @@ swiftc \
   "$SCRIPT_DIR/SelfTests/main.swift" \
   -o "$OUTPUT"
 "$OUTPUT"
+
+swiftc \
+  "$SCRIPT_DIR/Sources/vRemote/ChromecastButtonReport.swift" \
+  "$SCRIPT_DIR/Sources/vRemote/C3SerialProtocol.swift" \
+  "$SCRIPT_DIR/SelfTests/C3Serial/main.swift" \
+  -o "$SCRIPT_DIR/.build/c3-serial-self-test"
+"$SCRIPT_DIR/.build/c3-serial-self-test"
+
+swiftc \
+  "$SCRIPT_DIR/Sources/vRemote/ATVV/BridgeError.swift" \
+  "$SCRIPT_DIR/Sources/vRemote/ATVV/ADPCMDecoder.swift" \
+  "$SCRIPT_DIR/Sources/vRemote/ATVV/ATVVProtocol.swift" \
+  "$SCRIPT_DIR/Sources/vRemote/C3VoiceBridge.swift" \
+  "$SCRIPT_DIR/SelfTests/C3Voice/main.swift" \
+  -o "$SCRIPT_DIR/.build/c3-voice-self-test"
+"$SCRIPT_DIR/.build/c3-voice-self-test"
